@@ -1,26 +1,25 @@
 import { ChangeEvent, useCallback, useState } from 'react'
-import { Badge } from './components/ui/badge'
-import { Button } from './components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card'
-import { Input } from './components/ui/input'
-import { Label } from './components/ui/label'
-import { httpClient } from './lib/repository/http-client'
-import { Response } from './@types'
-import { toBase64 } from './lib/utils'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { httpClient } from '@/lib/repository/http-client'
+import { Response } from '@/@types'
+import { toBase64 } from '@/lib/utils'
 
 interface RemoveBgResponse {
   foreground_image?: string
   engine?: string
 }
 
-function App() {
+function HomePage() {
   const [previewImage, setPreviewImage] = useState<string>('')
   const [resultImage, setResultImage] = useState<string>('')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [engineName, setEngineName] = useState<string>('')
   const [error, setError] = useState<string>('')
   const [loading, setLoading] = useState<boolean>(false)
-  const [responseText, setResponseText] = useState<string>('')
 
   const onPickImage = (event: ChangeEvent<HTMLInputElement>): void => {
     const file = event.target.files?.[0] ?? null
@@ -42,7 +41,6 @@ function App() {
 
     setLoading(true)
     setError('')
-    setResponseText('')
     setResultImage('')
     setEngineName('')
 
@@ -56,7 +54,6 @@ function App() {
 
       setResultImage(res.data.foreground_image)
       setEngineName(res.data.engine || '')
-      setResponseText(JSON.stringify(res.data, null, 2))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not remove background.')
     } finally {
@@ -69,7 +66,7 @@ function App() {
       <CardHeader>
         <CardTitle className="text-2xl tracking-tight">Remove Background</CardTitle>
         <CardDescription className="text-slate-600">
-          Upload an image and call your local BiRefNet service at <code>/remove-background</code>
+          Upload an image and remove background
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4">
@@ -122,18 +119,9 @@ function App() {
             )}
           </article>
         </div>
-
-        {responseText && (
-          <details className="mt-4 border border-slate-200 rounded-lg overflow-hidden bg-slate-950 text-slate-200">
-            <summary>API raw response</summary>
-            <pre className="m-0 overflow-x-auto p-4 text-xs leading-6 text-slate-200">
-              {responseText}
-            </pre>
-          </details>
-        )}
       </CardContent>
     </Card>
   )
 }
 
-export default App
+export { HomePage }

@@ -13,8 +13,8 @@ COPY requirements.txt ./requirements.txt
 RUN pip install --upgrade pip \
 && pip install --no-cache-dir -r requirements.txt
 
-COPY app.py ./app.py
+COPY app.py routes.py server.py utils.py ./
 
 EXPOSE 8010
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8010"]
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8010"]

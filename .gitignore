@@ -3,12 +3,10 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .mypy_cache/
-
 training/data/
 training/runs/
 .hf-cache/
-
 .venv/
 venv/
-
 node_modules
+.idea

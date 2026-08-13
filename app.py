@@ -3,134 +3,16 @@ import io
 import logging
 import multiprocessing as mp
 import os
-import json
 import threading
 import time
 from urllib.parse import urlsplit
 import numpy as np
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from PIL import Image, ImageFilter
 
 
-_UNSET_RESPONSE_DATA = object()
-
 logger = logging.getLogger('remove_background_service')
 logging.basicConfig(level=os.getenv('LOG_LEVEL', 'INFO'))
-
-app = FastAPI(title='Remove Background Service', version='1.0.0')
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        'http://localhost:5173',
-    ],
-    allow_credentials=True,
-    allow_methods=['*'],
-    allow_headers=['*'],
-)
-
-
-def _is_json_response(response: JSONResponse) -> bool:
-    return response.headers.get('content-type', '').startswith('application/json')
-
-
-def _parse_response_payload(response: JSONResponse) -> object | None:
-    if not _is_json_response(response):
-        return None
-
-    body = getattr(response, 'body', b'') or b''
-    if not body:
-        return None
-
-    try:
-        return json.loads(body.decode('utf-8'))
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        return None
-
-
-def set_remove_bg_response(
-    request: Request,
-    *,
-    message: str | None = None,
-    status_code: int | None = None,
-    data: object = _UNSET_RESPONSE_DATA,
-) -> None:
-    if message is not None:
-        request.state.response_message = message
-
-    if status_code is not None:
-        request.state.response_status_code = int(status_code)
-
-    if data is not _UNSET_RESPONSE_DATA:
-        request.state.response_data = data
-
-
-def _build_remove_background_envelope(
-    request: Request,
-    response: JSONResponse,
-    payload: object | None
-) -> dict[str, object]:
-    status_code = getattr(request.state, 'response_status_code', None)
-    if isinstance(status_code, int):
-        status_code = int(status_code)
-    else:
-        status_code = response.status_code
-
-    explicit_message = getattr(request.state, 'response_message', None)
-    explicit_data_set = hasattr(request.state, 'response_data')
-    explicit_data = getattr(request.state, 'response_data', _UNSET_RESPONSE_DATA)
-
-    message = explicit_message
-    if message is None:
-        if isinstance(payload, dict):
-            if isinstance(payload.get('message'), str):
-                message = payload['message']
-            elif isinstance(payload.get('detail'), str):
-                message = payload['detail']
-        if message is None:
-            message = 'Success' if status_code < 400 else 'Request failed'
-
-    envelope: dict[str, object] = {
-        'statusCode': status_code,
-        'message': message or '',
-    }
-    if explicit_data_set:
-        envelope['data'] = explicit_data
-
-    return envelope
-
-
-@app.middleware("http")
-async def remove_background_interceptor(request: Request, call_next):
-    if request.url.path.rstrip('/') != '/remove-background':
-        return await call_next(request)
-
-    try:
-        response = await call_next(request)
-    except Exception:
-        logger.exception('[REMOVE-BG] Unhandled error in /remove-background')
-        response = JSONResponse(status_code=500, content={'detail': 'Internal server error'})
-
-    payload = _parse_response_payload(response)
-    if not isinstance(response, JSONResponse):
-        # FastAPI returns response objects compatible with JSONResponse for this route.
-        # We keep a guard here for robustness if the route changes later.
-        return response
-
-    envelope = _build_remove_background_envelope(request, response, payload)
-    wrapped_headers = {
-        name: value
-        for name, value in response.headers.items()
-        if name.lower() not in {'content-type', 'content-length'}
-    }
-    return JSONResponse(
-        status_code=response.status_code,
-        content=envelope,
-        headers=wrapped_headers,
-    )
 
 _birefnet_runtime_cache: dict[tuple[str, str, int, bool, bool, tuple[int, int, int]], dict] = {}
 _BIREFNET_TIMEOUT_SECONDS = int(os.getenv('BIREFNET_TIMEOUT_SECONDS', '120'))
@@ -618,7 +500,7 @@ def _release_birefnet_worker(index: int, runtime: dict[str, object], reset: bool
         _birefnet_worker_pool_condition.notify()
 
 
-def _remove_bg_birefnet(subject_img: Image.Image):
+def remove_bg_birefnet(subject_img: Image.Image):
     model_id = (os.getenv('BIREFNET_MODEL_ID', 'ZhengPeng7/BiRefNet') or '').strip()
     if not model_id:
         return None, None
@@ -718,46 +600,3 @@ def _remove_bg_birefnet(subject_img: Image.Image):
         return fg_img, result['engine']
     finally:
         _release_birefnet_worker(worker_index, runtime, reset=reset_worker)
-
-
-@app.get('/health')
-def health():
-    return {'status': 'ok'}
-
-
-@app.post('/remove-background')
-def remove_background(payload: RemoveBackgroundRequest, request: Request):
-    try:
-        image_data = _decode_base64_image(payload.image_base64)
-        subject_img = Image.open(io.BytesIO(image_data)).convert('RGBA')
-    except Exception as exc:
-        set_remove_bg_response(
-            request,
-            message=f'Invalid base64 image data: {exc}',
-            status_code=400,
-        )
-        raise HTTPException(status_code=400, detail=f'Invalid base64 image data: {exc}') from exc
-
-    fg_img, engine_used = _remove_bg_birefnet(subject_img)
-
-    if fg_img is None:
-        set_remove_bg_response(
-            request,
-            message='Background removal failed for all configured engines.',
-            status_code=503,
-        )
-        raise HTTPException(status_code=503, detail='Background removal failed for all configured engines.')
-
-    output_bytes = _pil_to_bytes(fg_img, fmt='PNG')
-    foreground_base64 = base64.b64encode(output_bytes).decode('ascii')
-    response_data = {
-        'foreground_image': f'data:image/png;base64,{foreground_base64}',
-        'engine': engine_used,
-    }
-    set_remove_bg_response(
-        request,
-        message='Background removed successfully.',
-        status_code=200,
-        data=response_data,
-    )
-    return response_data
