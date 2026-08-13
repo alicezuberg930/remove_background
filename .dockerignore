@@ -1,0 +1,13 @@
+.git
+.idea
+.vscode
+__pycache__
+*.py[cod]
+
+.env
+.hf-cache
+training/data
+training/runs
+
+.venv
+venv
