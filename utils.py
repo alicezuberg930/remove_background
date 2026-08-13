@@ -1,11 +1,45 @@
 import logging
 import os
+import secrets
+import threading
+import time
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
 logger = logging.getLogger('remove_background_service')
 logging.basicConfig(level=os.getenv('LOG_LEVEL', 'INFO'))
+
+_CUID_COUNTER = 0
+_CUID_COUNTER_LOCK = threading.Lock()
+
+
+def _to_base36(value: int) -> str:
+    if value == 0:
+        return '0'
+
+    alphabet = '0123456789abcdefghijklmnopqrstuvwxyz'
+    result = []
+    current = value
+    while current > 0:
+        current, remainder = divmod(current, 36)
+        result.append(alphabet[remainder])
+
+    return ''.join(reversed(result))
+
+
+def cuid_generator() -> str:
+    """Generate a time-based, collision-resistant ID."""
+    timestamp_ms = int(time.time() * 1000)
+
+    with _CUID_COUNTER_LOCK:
+        global _CUID_COUNTER
+        _CUID_COUNTER = (_CUID_COUNTER + 1) % (1 << 16)
+        counter = _CUID_COUNTER
+
+    random_suffix = _to_base36(secrets.randbits(48))
+    pid_suffix = _to_base36(os.getpid() % 10000)
+    return f"c{_to_base36(timestamp_ms)}{_to_base36(counter).zfill(4)}{pid_suffix}{random_suffix}"
 
 
 _UNSET_RESPONSE_DATA = object()
