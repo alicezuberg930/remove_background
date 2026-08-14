@@ -219,14 +219,16 @@ def compute_loss(logits: torch.Tensor, target: torch.Tensor, args: argparse.Name
     )
 
 
-def validate(model, loader: DataLoader, device: torch.device) -> dict[str, float]:
+def validate(model, loader: DataLoader, device: torch.device, args: argparse.Namespace) -> dict[str, float]:
     model.eval()
     total_intersection = 0.0
     total_union = 0.0
     total_dice_num = 0.0
     total_dice_den = 0.0
     total_mae = 0.0
+    total_validation_loss = 0.0
     total_pixels = 0
+    val_batches = 0
 
     with torch.no_grad():
         for batch in loader:
@@ -236,6 +238,8 @@ def validate(model, loader: DataLoader, device: torch.device) -> dict[str, float
             logits = extract_prediction(outputs)
             if logits.shape[-2:] != masks.shape[-2:]:
                 logits = F.interpolate(logits, size=masks.shape[-2:], mode='bilinear', align_corners=False)
+            total_validation_loss += compute_loss(logits, masks, args).item()
+            val_batches += 1
             probs = torch.sigmoid(logits)
             pred = probs > 0.5
             target = masks > 0.5
@@ -253,6 +257,7 @@ def validate(model, loader: DataLoader, device: torch.device) -> dict[str, float
         'iou': total_intersection / max(1.0, total_union),
         'dice': total_dice_num / max(1.0, total_dice_den),
         'mae': total_mae / max(1, total_pixels),
+        'validation_loss': total_validation_loss / max(1, val_batches),
     }
 
 
@@ -531,7 +536,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--resume',
         action='store_true',
-        help='Resume from OUTPUT_DIR/training_state.pt, including the next training image.',
+        help=(
+            'Resume from OUTPUT_DIR/training_state.pt, including the next training image. '
+            'Start fresh when no checkpoint exists.'
+        ),
     )
     return parser.parse_args()
 
@@ -561,11 +569,15 @@ def main() -> int:
     torch.manual_seed(args.seed)
 
     checkpoint_path = args.output_dir / 'training_state.pt'
-    resume_state = (
-        load_training_checkpoint(checkpoint_path, args, train_pairs)
-        if args.resume
-        else None
-    )
+    resume_state = None
+    if args.resume:
+        if checkpoint_path.is_file():
+            resume_state = load_training_checkpoint(checkpoint_path, args, train_pairs)
+        else:
+            print(
+                f'Resume requested but no checkpoint was found; starting fresh: {checkpoint_path}',
+                flush=True,
+            )
 
     train_dataset = MattingDataset(
         image_dir=args.train_images,
@@ -784,7 +796,7 @@ def main() -> int:
                 )
                 return 130
 
-        metrics = validate(model, val_loader, device)
+        metrics = validate(model, val_loader, device, args)
         epoch_summary = {
             'epoch': epoch,
             'train_loss': running_loss / max(1, total_train_batches),

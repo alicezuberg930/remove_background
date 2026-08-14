@@ -20,10 +20,10 @@ Vite + React UI for calling `POST /remove-background` and showing the Base64 ima
      "image_base64": "data:image/png;base64,..."
    }
    ```
-4. Renders backend response `foreground_image` field:
+4. Renders backend response `cleaned_image` field:
    ```json
    {
-     "foreground_image": "data:image/png;base64,...",
+     "cleaned_image": "data:image/png;base64,...",
      "engine": "BiRefNet:..."
    }
    ```

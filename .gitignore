@@ -10,3 +10,4 @@ training/runs/
 venv/
 node_modules
 .idea
+server/cleaned-results

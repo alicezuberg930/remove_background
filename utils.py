@@ -3,6 +3,7 @@ import os
 import secrets
 import threading
 import time
+from typing import Any, Dict, TypedDict
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -44,6 +45,11 @@ def cuid_generator() -> str:
 
 _UNSET_RESPONSE_DATA = object()
 
+class PaginateMetadata(TypedDict):
+    page: int
+    total_page: int
+    page_size: int
+
 
 def set_response(
     request: Request,
@@ -51,6 +57,7 @@ def set_response(
     message: str | None = None,
     status_code: int | None = None,
     data: object = _UNSET_RESPONSE_DATA,
+    paginate: PaginateMetadata | None = None,
 ) -> None:
     if message is not None:
         request.state.response_message = message
@@ -61,11 +68,16 @@ def set_response(
     if data is not _UNSET_RESPONSE_DATA:
         request.state.response_data = data
 
+    if paginate is not None:
+        request.state.response_paginate = paginate   
+
 
 def build_envelope(
     request: Request,
     response: JSONResponse,
-) -> dict[str, object]:
+) -> Dict[str, Any]:
+    # Keep compatibility with older type checkers by avoiding
+    # newer builtin generic dict expression forms.
     status_code = getattr(request.state, 'response_status_code', None)
     if isinstance(status_code, int):
         status_code = int(status_code)
@@ -80,20 +92,20 @@ def build_envelope(
     if message is None:
         message = 'Success' if status_code < 400 else 'Request failed'
 
-    envelope: dict[str, object] = {
+    envelope: Dict[str, Any] = {
         'statusCode': status_code,
         'message': message or '',
     }
     if explicit_data_set:
         envelope['data'] = explicit_data
+    if hasattr(request.state, 'response_paginate'):
+        envelope['paginate'] = request.state.response_paginate
+        delattr(request.state, 'response_paginate')
 
     return envelope
 
 
 async def interceptor(request: Request, call_next):
-    if request.url.path.rstrip('/') != '/remove-background':
-        return await call_next(request)
-
     try:
         response = await call_next(request)
     except Exception:

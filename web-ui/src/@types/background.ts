@@ -1,4 +1,10 @@
 export type CleanedBackground = {
-    foreground_image?: string
-    engine?: string
+    job_id: string
+    created_at: string
+    cleaned_image: string
+    engine: string
+    width: number
+    height: number
+    bit_depth: number
+    size: number
 }
