@@ -5,6 +5,7 @@ import inspect
 import json
 import math
 import random
+import signal
 import shutil
 from pathlib import Path
 
@@ -292,6 +293,163 @@ def save_model(model, output_dir: Path, metadata: dict) -> None:
         json.dump(metadata, handle, indent=2)
 
 
+def make_epoch_order(pair_count: int, seed: int, epoch: int) -> list[int]:
+    order = list(range(pair_count))
+    random.Random(f'{seed}:{epoch}').shuffle(order)
+    return order
+
+
+def get_resume_config(args: argparse.Namespace) -> dict:
+    keys = (
+        'base_model',
+        'image_size',
+        'batch_size',
+        'grad_accum_steps',
+        'lr',
+        'weight_decay',
+        'seed',
+        'no_augment',
+        'trainable_patterns',
+        'train_batchnorm',
+        'fp16',
+        'bce_weight',
+        'dice_weight',
+        'mae_weight',
+        'boundary_weight',
+    )
+    return {key: str(getattr(args, key)) if key == 'base_model' else getattr(args, key) for key in keys}
+
+
+def get_pair_ids(pairs: list[tuple[Path, Path]]) -> list[tuple[str, str]]:
+    return [(image.name, mask.name) for image, mask in pairs]
+
+
+def get_next_images(
+    pairs: list[tuple[Path, Path]],
+    epoch_order: list[int] | None,
+    next_batch_index: int,
+    batch_size: int,
+) -> list[str]:
+    if epoch_order is None:
+        return []
+    start = next_batch_index * batch_size
+    indices = epoch_order[start:start + batch_size]
+    return [str(pairs[index][0]) for index in indices]
+
+
+def save_training_checkpoint(
+    checkpoint_path: Path,
+    model,
+    optimizer,
+    scaler,
+    args: argparse.Namespace,
+    train_pairs: list[tuple[Path, Path]],
+    epoch: int,
+    epoch_order: list[int] | None,
+    next_batch_index: int,
+    running_loss: float,
+    best_dice: float,
+    optimizer_steps: int,
+) -> list[str]:
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    next_images = get_next_images(
+        train_pairs,
+        epoch_order,
+        next_batch_index,
+        args.batch_size,
+    )
+    gradient_state = {
+        name: parameter.grad.detach().cpu()
+        for name, parameter in model.named_parameters()
+        if parameter.grad is not None
+    }
+    state = {
+        'format_version': 1,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'scaler_state_dict': scaler.state_dict(),
+        'gradient_state_dict': gradient_state,
+        'epoch': epoch,
+        'epoch_order': epoch_order,
+        'next_batch_index': next_batch_index,
+        'next_images': next_images,
+        'running_loss': running_loss,
+        'best_dice': best_dice,
+        'optimizer_steps': optimizer_steps,
+        'resume_config': get_resume_config(args),
+        'train_pair_ids': get_pair_ids(train_pairs),
+        'python_rng_state': random.getstate(),
+        'numpy_rng_state': np.random.get_state(),
+        'torch_rng_state': torch.get_rng_state(),
+        'cuda_rng_state': torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
+    }
+    temporary_path = checkpoint_path.with_name(f'.{checkpoint_path.name}.tmp')
+    torch.save(state, temporary_path)
+    temporary_path.replace(checkpoint_path)
+    return next_images
+
+
+def load_training_checkpoint(
+    checkpoint_path: Path,
+    args: argparse.Namespace,
+    train_pairs: list[tuple[Path, Path]],
+) -> dict:
+    if not checkpoint_path.is_file():
+        raise SystemExit(
+            f'Cannot resume because checkpoint does not exist: {checkpoint_path}'
+        )
+    try:
+        state = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
+    except TypeError:
+        state = torch.load(checkpoint_path, map_location='cpu')
+
+    if state.get('format_version') != 1:
+        raise SystemExit(f'Unsupported training checkpoint format: {checkpoint_path}')
+
+    expected_config = state.get('resume_config', {})
+    current_config = get_resume_config(args)
+    mismatches = {
+        key: {'checkpoint': expected_config.get(key), 'command': value}
+        for key, value in current_config.items()
+        if expected_config.get(key) != value
+    }
+    if mismatches:
+        raise SystemExit(
+            'Resume arguments do not match the checkpoint: '
+            + json.dumps(mismatches, default=str)
+        )
+    if state.get('train_pair_ids') != get_pair_ids(train_pairs):
+        raise SystemExit('The training image/mask list has changed since the checkpoint was saved.')
+
+    epoch_order = state.get('epoch_order')
+    if epoch_order is not None and sorted(epoch_order) != list(range(len(train_pairs))):
+        raise SystemExit('The checkpoint contains an invalid training image order.')
+    total_batches = math.ceil(len(train_pairs) / args.batch_size)
+    next_batch_index = int(state.get('next_batch_index', 0))
+    if next_batch_index < 0 or next_batch_index > total_batches:
+        raise SystemExit('The checkpoint contains an invalid next batch index.')
+    return state
+
+
+def restore_rng_state(state: dict) -> None:
+    random.setstate(state['python_rng_state'])
+    np.random.set_state(state['numpy_rng_state'])
+    torch.set_rng_state(state['torch_rng_state'])
+    cuda_rng_state = state.get('cuda_rng_state')
+    if cuda_rng_state is not None and torch.cuda.is_available():
+        if len(cuda_rng_state) == torch.cuda.device_count():
+            torch.cuda.set_rng_state_all(cuda_rng_state)
+
+
+def restore_gradient_state(model, gradient_state: dict[str, torch.Tensor]) -> None:
+    parameters = dict(model.named_parameters())
+    for name, gradient in gradient_state.items():
+        parameter = parameters.get(name)
+        if parameter is None:
+            raise SystemExit(f'Checkpoint gradient parameter is missing from the model: {name}')
+        parameter.grad = gradient.to(device=parameter.device, dtype=parameter.dtype)
+
+
 def configure_trainable_parameters(model, patterns: str) -> dict[str, int]:
     total_params = 0
     trainable_params = 0
@@ -370,6 +528,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--boundary-weight', type=float, default=0.2)
     parser.add_argument('--device', default='auto', help='Use auto, cuda, or cpu.')
     parser.add_argument('--fp16', action='store_true')
+    parser.add_argument(
+        '--resume',
+        action='store_true',
+        help='Resume from OUTPUT_DIR/training_state.pt, including the next training image.',
+    )
     return parser.parse_args()
 
 
@@ -397,6 +560,13 @@ def main() -> int:
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
 
+    checkpoint_path = args.output_dir / 'training_state.pt'
+    resume_state = (
+        load_training_checkpoint(checkpoint_path, args, train_pairs)
+        if args.resume
+        else None
+    )
+
     train_dataset = MattingDataset(
         image_dir=args.train_images,
         mask_dir=args.train_masks,
@@ -415,13 +585,6 @@ def main() -> int:
     )
     device = torch.device(args.device)
     pin_memory = device.type == 'cuda'
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=args.batch_size,
-        shuffle=True,
-        num_workers=args.num_workers,
-        pin_memory=pin_memory,
-    )
     val_loader = DataLoader(
         val_dataset,
         batch_size=1,
@@ -434,6 +597,8 @@ def main() -> int:
         args.base_model,
         trust_remote_code=True,
     )
+    if resume_state is not None:
+        model.load_state_dict(resume_state['model_state_dict'])
     if args.gradient_checkpointing:
         if hasattr(model, 'gradient_checkpointing_enable'):
             try:
@@ -456,8 +621,47 @@ def main() -> int:
         weight_decay=args.weight_decay,
     )
     scaler = torch.cuda.amp.GradScaler(enabled=args.fp16 and device.type == 'cuda')
-    steps_per_epoch = math.ceil(len(train_loader) / max(1, args.grad_accum_steps))
+    total_train_batches = math.ceil(len(train_dataset) / args.batch_size)
+    steps_per_epoch = math.ceil(total_train_batches / max(1, args.grad_accum_steps))
     best_dice = -1.0
+    start_epoch = 1
+    resume_batch_index = 0
+    resume_epoch_order = None
+    resume_running_loss = 0.0
+    optimizer_steps = 0
+
+    if resume_state is not None:
+        optimizer.load_state_dict(resume_state['optimizer_state_dict'])
+        scaler.load_state_dict(resume_state['scaler_state_dict'])
+        restore_gradient_state(model, resume_state.get('gradient_state_dict', {}))
+        restore_rng_state(resume_state)
+        start_epoch = int(resume_state['epoch'])
+        resume_batch_index = int(resume_state['next_batch_index'])
+        resume_epoch_order = resume_state.get('epoch_order')
+        resume_running_loss = float(resume_state.get('running_loss', 0.0))
+        best_dice = float(resume_state.get('best_dice', -1.0))
+        optimizer_steps = int(resume_state.get('optimizer_steps', 0))
+
+        if resume_epoch_order is None and start_epoch <= args.epochs:
+            resume_epoch_order = make_epoch_order(len(train_pairs), args.seed, start_epoch)
+        next_images = get_next_images(
+            train_pairs,
+            resume_epoch_order,
+            resume_batch_index,
+            args.batch_size,
+        )
+        print(
+            json.dumps({
+                'resume': {
+                    'checkpoint': str(checkpoint_path),
+                    'epoch': start_epoch,
+                    'next_batch': resume_batch_index + 1,
+                    'next_images': next_images,
+                    'optimizer_steps': optimizer_steps,
+                },
+            }),
+            flush=True,
+        )
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     with (args.output_dir / 'run_args.json').open('w', encoding='utf-8') as handle:
@@ -469,14 +673,62 @@ def main() -> int:
         )
     print(json.dumps({'setup': vars(args) | param_stats | batchnorm_stats}, default=str), flush=True)
 
-    for epoch in range(1, args.epochs + 1):
+    if start_epoch > args.epochs:
+        print(
+            json.dumps({
+                'training_complete': True,
+                'completed_epochs': start_epoch - 1,
+                'requested_epochs': args.epochs,
+            }),
+            flush=True,
+        )
+        return 0
+
+    stop_requested = False
+
+    def request_safe_stop(signum, _frame) -> None:
+        nonlocal stop_requested
+        if stop_requested:
+            raise KeyboardInterrupt
+        stop_requested = True
+        print(
+            json.dumps({
+                'stop_requested': signal.Signals(signum).name,
+                'message': 'Finishing the current batch before saving the resume checkpoint.',
+            }),
+            flush=True,
+        )
+
+    signal.signal(signal.SIGINT, request_safe_stop)
+    if hasattr(signal, 'SIGTERM'):
+        signal.signal(signal.SIGTERM, request_safe_stop)
+
+    for epoch in range(start_epoch, args.epochs + 1):
         model.train()
         if not args.train_batchnorm:
             freeze_batchnorm_layers(model)
-        optimizer.zero_grad(set_to_none=True)
-        running_loss = 0.0
+        continuing_epoch = epoch == start_epoch and resume_batch_index > 0
+        epoch_order = (
+            resume_epoch_order
+            if epoch == start_epoch and resume_epoch_order is not None
+            else make_epoch_order(len(train_pairs), args.seed, epoch)
+        )
+        next_batch_index = resume_batch_index if continuing_epoch else 0
+        running_loss = resume_running_loss if continuing_epoch else 0.0
+        if not continuing_epoch:
+            optimizer.zero_grad(set_to_none=True)
 
-        for step, batch in enumerate(train_loader, start=1):
+        remaining_start = next_batch_index * args.batch_size
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=args.batch_size,
+            sampler=epoch_order[remaining_start:],
+            shuffle=False,
+            num_workers=args.num_workers,
+            pin_memory=pin_memory,
+        )
+
+        for step, batch in enumerate(train_loader, start=next_batch_index + 1):
             images = batch['image'].to(device, non_blocking=True)
             masks = batch['mask'].to(device, non_blocking=True)
 
@@ -488,26 +740,54 @@ def main() -> int:
             scaler.scale(loss).backward()
             running_loss += loss.item() * max(1, args.grad_accum_steps)
 
-            if step % max(1, args.grad_accum_steps) == 0 or step == len(train_loader):
+            if step % max(1, args.grad_accum_steps) == 0 or step == total_train_batches:
                 scaler.step(optimizer)
                 scaler.update()
                 optimizer.zero_grad(set_to_none=True)
+                optimizer_steps += 1
 
             if args.log_every_steps > 0 and step % args.log_every_steps == 0:
                 print(
                     json.dumps({
                         'epoch': epoch,
                         'step': step,
-                        'steps': len(train_loader),
+                        'steps': total_train_batches,
                         'avg_train_loss': running_loss / max(1, step),
                     }),
                     flush=True,
                 )
 
+            next_batch_index = step
+            if stop_requested:
+                next_images = save_training_checkpoint(
+                    checkpoint_path=checkpoint_path,
+                    model=model,
+                    optimizer=optimizer,
+                    scaler=scaler,
+                    args=args,
+                    train_pairs=train_pairs,
+                    epoch=epoch,
+                    epoch_order=epoch_order,
+                    next_batch_index=next_batch_index,
+                    running_loss=running_loss,
+                    best_dice=best_dice,
+                    optimizer_steps=optimizer_steps,
+                )
+                print(
+                    json.dumps({
+                        'checkpoint_saved': str(checkpoint_path),
+                        'epoch': epoch,
+                        'completed_batches': next_batch_index,
+                        'next_images': next_images,
+                    }),
+                    flush=True,
+                )
+                return 130
+
         metrics = validate(model, val_loader, device)
         epoch_summary = {
             'epoch': epoch,
-            'train_loss': running_loss / max(1, len(train_loader)),
+            'train_loss': running_loss / max(1, total_train_batches),
             **metrics,
         }
         print(json.dumps(epoch_summary), flush=True)
@@ -532,6 +812,25 @@ def main() -> int:
                     'image_size': args.image_size,
                 },
             )
+
+        next_epoch = epoch + 1
+        save_training_checkpoint(
+            checkpoint_path=checkpoint_path,
+            model=model,
+            optimizer=optimizer,
+            scaler=scaler,
+            args=args,
+            train_pairs=train_pairs,
+            epoch=next_epoch,
+            epoch_order=None,
+            next_batch_index=0,
+            running_loss=0.0,
+            best_dice=best_dice,
+            optimizer_steps=optimizer_steps,
+        )
+        resume_batch_index = 0
+        resume_epoch_order = None
+        resume_running_loss = 0.0
 
     return 0
 

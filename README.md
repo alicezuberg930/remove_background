@@ -1,39 +1,17 @@
-# Remove Background Service
+﻿# Remove Background Service
 
-Service này chạy độc lập với `backend-main`, đặt ngang cấp với thư mục backend để có thể deploy lên server riêng.
+This repository runs a FastAPI background-removal service with optional Triton serving for BiRefNet.
 
-## Cấu trúc
+## Structure
 
-- `app.py`: API FastAPI cho remove background
-- `Dockerfile`: image chạy service
-- `Dockerfile.triton`: image Triton Inference Server cho BiRefNet
-- `docker-compose.yml`: mở port `8010` ra ngoài
-- `.env.example`: biến môi trường mẫu
-- `triton-model-repository/`: model repository cho Triton
+- `server.py`: FastAPI app entry point
+- `Dockerfile`: service image
+- `Dockerfile.triton`: Triton Inference Server image for BiRefNet
+- `docker-compose.yml`: opens port `8010` for host access
+- `.env.example`: sample environment variables
+- `triton-model-repository/`: Triton model repository
 
-## Endpoint
-
-- `GET /health`
-- `POST /remove-background`
-
-Request JSON:
-
-```json
-{
-  "image_base64": "data:image/png;base64,..."
-}
-```
-
-Response JSON:
-
-```json
-{
-  "foreground_image": "data:image/png;base64,...",
-  "engine": "BiRefNet:ZhengPeng7/BiRefNet"
-}
-```
-
-## Run bằng Docker Compose
+## Run with Docker Compose
 
 ```bash
 cd remove-background-service
@@ -41,22 +19,22 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Service sẽ lắng nghe trên port `8010` của máy host.
+The service will be exposed on host port `8010`.
 
-Theo mặc định compose mới sẽ chạy thêm một container Triton nội bộ. `app.py` sẽ gọi Triton trước cho BiRefNet, nếu Triton lỗi hoặc chưa sẵn sàng thì fallback về local worker như cũ.
+By default, the compose setup runs a Triton container, and `server.py` uses Triton first, then falls back to the local worker.
 
-## Mở port cho backend gọi sang
+## Open port for backend access
 
-Nếu backend chạy ở máy khác, server service phải mở inbound port `8010` trên firewall/security group.
+If the backend runs on another host, make sure inbound port `8010` is accessible in your firewall/security group.
 
-Backend Django trỏ tới service qua biến env:
+For a Django backend, set:
 
 ```dotenv
 REMOVE_BG_SERVICE_URL=http://YOUR_SERVER_IP:8010
 REMOVE_BG_SERVICE_TIMEOUT_SECONDS=120
 ```
 
-## Biến môi trường BiRefNet + Triton
+## BiRefNet + Triton environment variables
 
 ```dotenv
 BIREFNET_MODEL_ID=ZhengPeng7/BiRefNet
@@ -71,48 +49,33 @@ BIREFNET_TRITON_URL=http://triton:8000
 BIREFNET_TRITON_MODEL_NAME=birefnet
 ```
 
-Để Triton ưu tiên GPU, để `BIREFNET_DEVICE` rỗng. Khi đó model sẽ tự chọn `cuda` nếu container thấy GPU, và fallback về `cpu` nếu không có GPU. Với host có NVIDIA Container Toolkit, compose đã bật `gpus: all` cho container Triton.
+Set `BIREFNET_TRITON_ENABLED=false` to disable Triton and use the local worker only.
 
-Nếu muốn tắt Triton, set `BIREFNET_TRITON_ENABLED=false`. Khi đó service sẽ chỉ dùng local worker như trước.
+## Pros and cons of Triton
 
-## Ưu điểm khi dùng Triton cho BiRefNet
+- Separates inference from FastAPI and improves scalability.
+- Helps with model cache/warmup behavior for production.
+- Keeps orchestration and fallback logic in FastAPI.
 
-- Tách riêng tầng inference khỏi FastAPI, dễ scale độc lập.
-- Model cache và vòng đời model rõ ràng hơn cho production.
-- Dễ chuyển sang GPU hoặc tối ưu batching sau này mà không phải viết lại API remove background.
-- FastAPI vẫn giữ được orchestration logic và fallback engine hiện có.
+- Adds one more container and extra monitoring overhead.
+- Cold starts are longer when Triton loads model artifacts.
+- Triton container still requires a compatible environment and image size.
 
-## Nhược điểm khi dùng Triton cho BiRefNet
-
-- Thêm một container và thêm một lớp vận hành cần monitor.
-- Cold start lớn hơn nếu Triton phải tải lại model.
-- Python backend trong Triton vẫn phải cài `torch`, `transformers`, `timm`, `kornia`, nên image khá nặng.
-- Với tải nhỏ, lợi ích throughput có thể chưa bù được độ phức tạp tăng thêm.
-
-## Chạy không dùng Docker
+## Run without Docker
 
 ```bash
 cd remove-background-service
 python -m venv .venv
-. .venv/bin/activate
+.venv/Scripts/activate
 pip install -r requirements.txt
-uvicorn server:app --host 0.0.0.0 --port 8010
+uvicorn server:server --host 0.0.0.0 --port 8010
 ```
 
-## Kiểm tra nhanh
+## Fine-tuning
 
-```bash
-curl http://127.0.0.1:8010/health
-```
+The repository runs inference/deployment from this service. Training is isolated in `training/`.
 
-Nếu trả về `{"status":"ok"}` thì backend có thể kết nối tới service này.
-
-## Fine-tune cho anh nhieu nguoi/vat sat nhau
-
-Repo nay chay inference/deploy. Training duoc tach rieng trong `training/` de
-khong lam phuc tap service production.
-
-Dataset need to have mask:
+Dataset structure:
 
 ```text
 training/data/group-matting/
@@ -122,53 +85,30 @@ training/data/group-matting/
   val/masks/*.png
 ```
 
-image name and mask name needs to match, for example `group-001.jpg` and `group-001.png`. Priority for images with many people next to each other, people touching objects, hair/clothes/bag/chair/table/product stuck to each other.
+Image and mask names must match, for example `group-001.jpg` and `group-001.png`.
 
-Check dataset:
+Validate dataset:
 
 ```bash
 python training/audit_dataset.py training/data/group-matting
 ```
 
-Fine-tune:
+Run fine-tuning:
+
+- On linux
 
 ```bash
-python training/finetune_birefnet.py \
-  --train-images training/data/group-matting/train/images \
-  --train-masks training/data/group-matting/train/masks \
-  --val-images training/data/group-matting/val/images \
-  --val-masks training/data/group-matting/val/masks \
-  --base-model ZhengPeng7/BiRefNet_HR-matting \
-  --output-dir training/runs/group-matting \
-  --image-size 512 \
-  --epochs 20 \
-  --batch-size 1 \
-  --grad-accum-steps 8 \
-  --lr 1e-5 \
-  --trainable-patterns decoder \
-  --fp16
+bash scripts/run-finetune.sh
 ```
+
+- On windows
 
 ```bash
-docker compose --profile train build birefnet-trainer
-docker compose --profile train run --rm birefnet-trainer \
-  python3 training/finetune_birefnet.py \
-  --train-images training/data/group-matting/train/images \
-  --train-masks training/data/group-matting/train/masks \
-  --val-images training/data/group-matting/val/images \
-  --val-masks training/data/group-matting/val/masks \
-  --base-model ZhengPeng7/BiRefNet_HR-matting \
-  --output-dir training/runs/group-matting \
-  --image-size 512 \
-  --epochs 20 \
-  --batch-size 1 \
-  --grad-accum-steps 8 \
-  --lr 1e-5 \
-  --trainable-patterns decoder \
-  --fp16
+scripts\run-finetune.bat
 ```
 
-best checkpoint is in `training/runs/group-matting/best`. to deploy to docker Compose, set:
+Best checkpoint is stored at `training/runs/group-matting/best`.
+To deploy this checkpoint in Docker Compose, set:
 
 ```dotenv
 BIREFNET_MODEL_ID=/training/runs/group-matting/best

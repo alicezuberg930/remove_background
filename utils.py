@@ -45,7 +45,7 @@ def cuid_generator() -> str:
 _UNSET_RESPONSE_DATA = object()
 
 
-def set_remove_bg_response(
+def set_response(
     request: Request,
     *,
     message: str | None = None,
@@ -62,7 +62,7 @@ def set_remove_bg_response(
         request.state.response_data = data
 
 
-def build_remove_background_envelope(
+def build_envelope(
     request: Request,
     response: JSONResponse,
 ) -> dict[str, object]:
@@ -90,7 +90,7 @@ def build_remove_background_envelope(
     return envelope
 
 
-async def remove_background_interceptor(request: Request, call_next):
+async def interceptor(request: Request, call_next):
     if request.url.path.rstrip('/') != '/remove-background':
         return await call_next(request)
 
@@ -100,7 +100,7 @@ async def remove_background_interceptor(request: Request, call_next):
         logger.exception('[REMOVE-BG] Unhandled error in /remove-background')
         response = JSONResponse(status_code=500, content={'detail': 'Internal server error'})
 
-    envelope = build_remove_background_envelope(request, response)
+    envelope = build_envelope(request, response)
     wrapped_headers = {
         name: value
         for name, value in response.headers.items()
