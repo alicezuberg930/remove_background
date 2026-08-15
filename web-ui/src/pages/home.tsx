@@ -2,9 +2,10 @@ import { useCallback, useEffect, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { httpClient } from '@/lib/repository/http-client'
 import { CleanedBackground, Response } from '@/@types'
-import { toBase64 } from '@/lib/utils'
+import { downloadFile, toBase64 } from '@/lib/utils'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Spinner } from '@/components/ui/spinner'
 import { LazyLoadImage } from '@/components/lazy-load-image'
@@ -23,6 +24,7 @@ function HomePage() {
   const [results, setResults] = useState<Response<CleanedBackground[]> | null>(null)
   const [resultsError, setResultsError] = useState<string>('')
   const [resultsLoading, setResultsLoading] = useState<boolean>(false)
+  const [selectedResult, setSelectedResult] = useState<CleanedBackground | null>(null)
 
   const deleteBackground = async (id: string) => {
     if (!id) {
@@ -121,6 +123,44 @@ function HomePage() {
     }
   }, [])
 
+  const formatResultValue = useCallback((key: string, value: unknown): string => {
+    if (value === null || value === undefined) {
+      return '-'
+    }
+
+    if (key === 'created_at') {
+      const createdAt = new Date(String(value))
+      return Number.isNaN(createdAt.getTime()) ? String(value) : createdAt.toLocaleString()
+    }
+
+    if (key === 'size' || key === 'original_size') {
+      if (typeof value !== 'number') return String(value)
+      return `${fData(value)}`
+    }
+
+    if (key === 'original_image') {
+      return typeof value === 'string' ? `${value.slice(0, 80)}...` : String(value)
+    }
+
+    if (typeof value === 'boolean') {
+      return value ? 'Yes' : 'No'
+    }
+
+    if (typeof value === 'number') {
+      return String(value)
+    }
+
+    if (typeof value === 'string') {
+      return value
+    }
+
+    if (typeof value === 'object') {
+      return JSON.stringify(value)
+    }
+
+    return String(value)
+  }, [])
+
   useEffect(() => {
     fetchResults().catch(() => { })
   }, [fetchResults])
@@ -198,14 +238,21 @@ function HomePage() {
                 <p className="text-sm text-slate-600">No results saved yet.</p>
               ) : null}
               {results?.data?.map((item) => (
-                <div className='relative border rounded-lg border-primary/50' key={item.job_id}>
+                <div
+                  key={item.job_id}
+                  className='relative border rounded-lg border-primary/50 cursor-pointer hover:bg-slate-50'
+                  onClick={() => setSelectedResult(item)}
+                >
                   <Button
                     type="button"
                     size="icon-lg"
                     variant="destructive"
                     className="absolute top-2 right-2 z-10"
                     aria-label={`Delete result ${item.job_id}`}
-                    onClick={() => deleteBackground(item.job_id)}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      deleteBackground(item.job_id)
+                    }}
                   >
                     <Trash />
                   </Button>
@@ -217,7 +264,12 @@ function HomePage() {
                   />
                   <div className='flex items-center justify-between py-1 px-3'>
                     <span className='font-semibold'>Size: {fData(item.size)}</span>
-                    <Button>
+                    <Button
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        downloadFile(item.job_id, item.cleaned_image).catch(() => { })
+                      }}
+                    >
                       <Download />
                     </Button>
                   </div>
@@ -227,6 +279,44 @@ function HomePage() {
           </ScrollArea>
         </CardContent>
       </Card>
+      <Dialog
+        open={!!selectedResult}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedResult(null)
+          }
+        }}
+      >
+        <DialogContent className='w-full max-w-4xl sm:max-w-5xl'>
+          <DialogHeader>
+            <DialogTitle>Saved result details</DialogTitle>
+            <DialogDescription>
+              Click outside or press close to return.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className='grid gap-4 md:grid-cols-2'>
+            <div className='rounded-lg border border-slate-200 p-2'>
+              <img
+                src={selectedResult?.cleaned_image}
+                alt={selectedResult?.job_id ? `Result ${selectedResult.job_id}` : 'Result'}
+                className='w-full h-[360px] object-contain bg-slate-100 rounded-md'
+              />
+            </div>
+            <div className='text-sm space-y-2 max-h-[360px] overflow-auto pr-1'>
+              {(selectedResult ? Object.entries(selectedResult as Record<string, unknown>) : [])
+                .filter(([key]) => key !== 'cleaned_image')
+                .map(([key, value]) => (
+                  <div className='grid grid-cols-[130px_1fr] items-start gap-2' key={key}>
+                    <span className='font-semibold text-slate-500 capitalize'>{key.replace(/_/g, ' ')}</span>
+                    <span className='text-slate-900 break-words'>{formatResultValue(key, value)}</span>
+                  </div>
+                ))
+              }
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

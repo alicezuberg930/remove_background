@@ -1,4 +1,5 @@
 import { clsx, type ClassValue } from "clsx"
+import { toast } from "sonner"
 import { twMerge } from "tailwind-merge"
 
 const cn = (...inputs: ClassValue[]) => {
@@ -31,4 +32,29 @@ const alpha = (color: string, opacity: number): string => {
   return `rgba(0, 0, 0, ${opacity})`
 }
 
-export { cn, toBase64, alpha }
+const downloadFile = async (id: string, imageData: string) => {
+  try {
+    const response = await fetch(imageData)
+    if (!response.ok) {
+      throw new Error('Failed to prepare image for download.')
+    }
+    const blob = await response.blob()
+    const extension = (imageData.match(/data:image\/([a-zA-Z0-9.+-]+);base64,/)?.[1] || 'png').split('+')[0]
+    const mimeToExtension = extension === 'jpeg' ? 'jpg' : extension
+    const fileName = `cleaned-background-${id}.${mimeToExtension}`
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = fileName
+    link.rel = 'noopener'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    toast.success('Download started.')
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : 'Unable to download image.')
+  }
+}
+
+export { cn, toBase64, alpha, downloadFile }

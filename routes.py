@@ -22,7 +22,8 @@ def health():
 def remove_background(payload: RemoveBackgroundRequest, request: Request):
     try:
         image_data = _decode_base64_image(payload.image_base64)
-        subject_img = Image.open(io.BytesIO(image_data)).convert('RGBA')
+        original_img = Image.open(io.BytesIO(image_data))
+        subject_img = original_img.convert('RGBA')
     except Exception as exc:
         set_response(
             request,
@@ -30,6 +31,17 @@ def remove_background(payload: RemoveBackgroundRequest, request: Request):
             status_code=400,
         )
         raise HTTPException(status_code=400, detail=f'Invalid base64 image data: {exc}') from exc
+
+    original_size = len(image_data)
+    if original_img.mode == '1':
+        original_bit_depth = 1
+    elif original_img.mode.startswith('I;16'):
+        original_bit_depth = 16
+    elif original_img.mode in {'I', 'F'}:
+        original_bit_depth = 32
+    else:
+        original_bit_depth = len(original_img.getbands()) * 8
+    original_extension = (original_img.format or 'png').lower()
 
     fg_img, engine_used = remove_bg_birefnet(subject_img)
 
@@ -69,6 +81,10 @@ def remove_background(payload: RemoveBackgroundRequest, request: Request):
         'height': height,
         'bit_depth': bit_depth,
         'size': len(output_bytes),
+        'original_image': payload.image_base64,
+        'original_size': original_size,
+        'original_bit_depth': original_bit_depth,
+        'original_extension': original_extension,
     }
     with open(job_path, 'w', encoding='utf-8') as handle:
         json.dump(job_record, handle, ensure_ascii=False)
@@ -77,6 +93,10 @@ def remove_background(payload: RemoveBackgroundRequest, request: Request):
         'job_id': job_id,
         'cleaned_image': cleaned_image,
         'engine': engine_used,
+        'original_image': payload.image_base64,
+        'original_size': original_size,
+        'original_bit_depth': original_bit_depth,
+        'original_extension': original_extension,
     }
     set_response(
         request,
