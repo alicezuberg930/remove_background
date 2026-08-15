@@ -18,9 +18,7 @@ import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 
 export const HomePage = () => {
   const [previewImage, setPreviewImage] = useState<string>('')
-  const [resultImage, setResultImage] = useState<string>('')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [engineName, setEngineName] = useState<string>('')
   const [loading, setLoading] = useState<boolean>(false)
   const [results, setResults] = useState<Response<CleanedBackground[]> | null>(null)
   const [resultsLoading, setResultsLoading] = useState<boolean>(false)
@@ -77,11 +75,7 @@ export const HomePage = () => {
       toast.error('Please choose an image first.')
       return
     }
-
     setLoading(true)
-    setResultImage('')
-    setEngineName('')
-
     try {
       const image_base64 = await toBase64(selectedFile)
       const res = await httpClient.post<Response<CleanedBackground>>('/remove-background', { image_base64 })
@@ -90,10 +84,6 @@ export const HomePage = () => {
       if (!cleanedImage) {
         throw new Error('Backend response did not include cleaned_image.')
       }
-
-      setResultImage(cleanedImage)
-      setEngineName(res?.data?.engine || '')
-
       await fetchResults()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not remove background.')
@@ -158,55 +148,43 @@ export const HomePage = () => {
   }, [fetchResults])
 
   return (
-    <div className='grid h-full w-full max-w-full gap-4 grid-cols-1 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] items-stretch'>
-      <Card className='min-w-0 min-h-0 p-4 shadow-lg shadow-primary/20 h-fit'>
+    <div className='grid h-full w-full max-w-full gap-4 grid-cols-1 md:grid-cols-[minmax(0,2.7fr)_minmax(0,2.3fr)] items-stretch'>
+      <Card className='min-w-0 min-h-0 p-4 shadow-lg shadow-primary/20'>
         <CardHeader className='shrink-0'>
           <CardTitle className='text-2xl tracking-tight'>Remove Background</CardTitle>
-          <CardDescription className='text-slate-600'>
+          <CardDescription>
             Upload an image and remove background
           </CardDescription>
         </CardHeader>
-        <CardContent className='gap-4 space-y-4'>
-          <div className='grid gap-3 md:grid-cols-2'>
-            <article className='rounded-xl border border-primary/50 p-3'>
-              <h3 className='mb-2 text-sm text-slate-800'>Input image</h3>
+        <CardContent className='min-h-0 flex-1 h-full'>
+          <ScrollArea className='h-full w-full **:data-[slot=scroll-area-scrollbar]:hidden'>
+            <article className='space-y-2'>
+              <h3 className='text-sm text-slate-800'>Input image</h3>
               <Upload
                 file={selectedFile || previewImage}
                 onDrop={onPickImage}
                 onDelete={clearInputImage}
                 disabled={loading}
-                helperText={'Choose an image to remove your background'}
+                helperText={loading ? 'Currently working on your image' : 'Choose an image to remove your background'}
               />
             </article>
 
-            <article className='rounded-xl border border-primary/50 p-3'>
-              <h3 className='mb-2 flex items-center text-sm text-slate-800'>
-                Output image
-                {engineName ? <Badge variant='secondary'>{engineName}</Badge> : null}
-              </h3>
-              <Upload
-                file={resultImage}
-                disabled
-                helperText={loading ? 'Working on your image...' : 'Result will appear here after removal.'}
-              />
-            </article>
-          </div>
-
-          <div className='flex justify-end'>
-            <Button
-              size='lg'
-              onClick={removeBackground}
-              disabled={loading || !selectedFile}
-            >
-              {loading ? 'Processing...' : 'Remove Background'}
-            </Button>
-          </div>
+            <div className='flex justify-end mt-4'>
+              <Button
+                size='lg'
+                onClick={removeBackground}
+                disabled={loading || !selectedFile}
+              >
+                {loading ? 'Processing...' : 'Remove Background'}
+              </Button>
+            </div>
+          </ScrollArea>
         </CardContent>
       </Card>
       <Card className='min-w-0 min-h-0 p-4 shadow-lg shadow-primary/20'>
         <CardHeader className='shrink-0'>
           <CardTitle className='text-2xl tracking-tight'>Saved results</CardTitle>
-          <CardDescription className='text-slate-600'>
+          <CardDescription>
             Your results are saved here
           </CardDescription>
         </CardHeader>
