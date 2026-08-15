@@ -1,6 +1,6 @@
 ﻿# Remove Background Service
 
-This repository runs a FastAPI background-removal service with optional Triton serving for BiRefNet.
+This repository runs a FastAPI background-removal service with optional Triton serving for BiRefNet. Require maximum python version 3.12, any newer version will not work.
 
 ## Structure
 
