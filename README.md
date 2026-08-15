@@ -46,7 +46,7 @@ Set `BIREFNET_TRITON_ENABLED=false` to disable Triton and use the local worker o
 - Cold starts are longer when Triton loads model artifacts.
 - Triton container still requires a compatible environment and image size.
 
-## Run without Docker
+## Run fast API server without Docker
 
 - Windows
 
@@ -66,6 +66,14 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn server:server --host 0.0.0.0 --port 8010
+```
+
+## Run webiste user interface server
+
+```bash
+cd web-ui
+bun install
+bun run dev
 ```
 
 ## Fine-tuning

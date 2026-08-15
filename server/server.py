@@ -2,7 +2,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from fastapi import FastAPI
 
-from .routes import register_routes
+from routes import register_routes
 
 server = FastAPI(title='Remove Background Service', version='1.0.0')
 

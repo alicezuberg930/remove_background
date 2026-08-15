@@ -7,8 +7,8 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from PIL import Image
 
-from .app import RemoveBackgroundRequest, _decode_base64_image, _pil_to_bytes, remove_bg_birefnet
-from .utils import cuid_generator, interceptor, set_response
+from app import RemoveBackgroundRequest, _decode_base64_image, _pil_to_bytes, remove_bg_birefnet
+from utils import cuid_generator, interceptor, set_response
 
 router = APIRouter()
 
