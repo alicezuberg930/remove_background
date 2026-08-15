@@ -7,8 +7,8 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from PIL import Image
 
-from app import RemoveBackgroundRequest, _decode_base64_image, _pil_to_bytes, remove_bg_birefnet
-from utils import cuid_generator, interceptor, set_response
+from .app import RemoveBackgroundRequest, _decode_base64_image, _pil_to_bytes, remove_bg_birefnet
+from .utils import cuid_generator, interceptor, set_response
 
 router = APIRouter()
 
@@ -69,7 +69,7 @@ def remove_background(payload: RemoveBackgroundRequest, request: Request):
     cleaned_image = f'data:image/png;base64,{cleaned_base64}'
     job_id = cuid_generator()
 
-    cleaned_results_dir = os.path.join('server', 'cleaned-results')
+    cleaned_results_dir = os.path.join('cleaned-results')
     os.makedirs(cleaned_results_dir, exist_ok=True)
     job_path = os.path.join(cleaned_results_dir, f'{job_id}.json')
     job_record = {
@@ -129,7 +129,7 @@ def cleaned_backgrounds(
         )
         raise HTTPException(status_code=400, detail='Invalid page_size value. Use a positive integer.')
 
-    cleaned_results_dir = os.path.join('server', 'cleaned-results')
+    cleaned_results_dir = os.path.join('cleaned-results')
     if not os.path.isdir(cleaned_results_dir):
         set_response(
             request,
@@ -205,7 +205,7 @@ def delete_cleaned_background(request: Request):
         )
         raise HTTPException(status_code=400, detail='Invalid id path parameter.')
 
-    cleaned_results_dir = os.path.join('server', 'cleaned-results')
+    cleaned_results_dir = os.path.join('cleaned-results')
     job_path = os.path.join(cleaned_results_dir, f'{job_id}.json')
     if not os.path.isfile(job_path):
         set_response(

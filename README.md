@@ -4,22 +4,21 @@ This repository runs a FastAPI background removal service with optional Triton s
 
 ## Structure
 
-- `server.py`: FastAPI app entry point
-- `Dockerfile`: service image
-- `Dockerfile.triton`: Triton Inference Server image for BiRefNet
-- `docker-compose.yml`: opens port `8010` for host access
-- `.env.example`: sample environment variables
+- `server/server.py`: FastAPI app entry point
+- `server/Dockerfile`: service image
+- `server/Dockerfile.triton`: Triton Inference Server image for BiRefNet
+- `server/docker-compose.yml`: opens port `8010` for host access
+- `server/.env.example`: sample environment variables
 - `triton-model-repository/`: Triton model repository
 
 ## Run with Docker Compose
 
 ```bash
-cd remove-background-service
-cp .env.example .env
-docker compose up -d --build
+cp server/.env.example server/.env
+docker compose -f server/docker-compose.yml up -d --build
 ```
 
-The service will be exposed on host port `8010`. By default, the compose setup runs a Triton container, and `server.py` uses Triton first, then falls back to the local worker. If the backend runs on another host, make sure inbound port `8010` is accessible in your firewall/security group.
+The service will be exposed on host port `8010`. By default, the compose setup runs a Triton container, and `server/server.py` uses Triton first, then falls back to the local worker. If the backend runs on another host, make sure inbound port `8010` is accessible in your firewall/security group.
 
 ## BiRefNet + Triton environment variables
 
@@ -52,6 +51,7 @@ Set `BIREFNET_TRITON_ENABLED=false` to disable Triton and use the local worker o
 - Windows
 
 ```bash
+cd server
 python -m venv .venv
 .venv/Scripts/activate
 pip install -r requirements.txt
@@ -61,6 +61,7 @@ uvicorn server:server --host 0.0.0.0 --port 8010
 - Linux
 
 ```bash
+cd server
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt

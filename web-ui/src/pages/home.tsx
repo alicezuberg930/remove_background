@@ -85,6 +85,7 @@ export const HomePage = () => {
         throw new Error('Backend response did not include cleaned_image.')
       }
       await fetchResults()
+      setSelectedFile(null)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not remove background.')
     } finally {
@@ -161,7 +162,7 @@ export const HomePage = () => {
             <article className='space-y-2'>
               <h3 className='text-sm text-slate-800'>Input image</h3>
               <Upload
-                file={selectedFile || previewImage}
+                file={selectedFile}
                 onDrop={onPickImage}
                 onDelete={clearInputImage}
                 disabled={loading}
