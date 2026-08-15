@@ -46,48 +46,22 @@ training.
 
 ## Fine-tune
 
-Start with a small run:
+Run fine-tuning:
+
+- On linux
 
 ```bash
-python training/finetune_birefnet.py \
-  --train-images training/data/group-matting/train/images \
-  --train-masks training/data/group-matting/train/masks \
-  --val-images training/data/group-matting/val/images \
-  --val-masks training/data/group-matting/val/masks \
-  --base-model ZhengPeng7/BiRefNet_HR-matting \
-  --output-dir training/runs/group-matting \
-  --image-size 512 \
-  --epochs 20 \
-  --batch-size 1 \
-  --grad-accum-steps 8 \
-  --lr 1e-5 \
-  --trainable-patterns decoder \
-  --fp16
+bash scripts/run-finetune.sh
+```
+
+- On windows
+
+```bash
+scripts\run-finetune.bat
 ```
 
 On an 8GB GPU, start with `--image-size 512`. Try `768` after the first run
 works. Use `1024`, `1536`, or `2048` only on larger GPUs.
-
-Or run through the Docker trainer profile:
-
-```bash
-docker compose --profile train build birefnet-trainer
-docker compose --profile train run --rm birefnet-trainer \
-  python3 training/finetune_birefnet.py \
-  --train-images training/data/group-matting/train/images \
-  --train-masks training/data/group-matting/train/masks \
-  --val-images training/data/group-matting/val/images \
-  --val-masks training/data/group-matting/val/masks \
-  --base-model ZhengPeng7/BiRefNet_HR-matting \
-  --output-dir training/runs/group-matting \
-  --image-size 512 \
-  --epochs 20 \
-  --batch-size 1 \
-  --grad-accum-steps 8 \
-  --lr 1e-5 \
-  --trainable-patterns decoder \
-  --fp16
-```
 
 The best deployable checkpoint is saved at:
 
@@ -97,24 +71,10 @@ training/runs/group-matting/best
 
 ## Deploy the fine-tuned model
 
-When running through Docker Compose, mount path `/models-finetuned` is already
-reserved for local trained checkpoints. Set:
+Best checkpoint is stored at `training/runs/group-matting/best`.
+To deploy this checkpoint in Docker Compose or local machine, set:
 
 ```dotenv
 BIREFNET_MODEL_ID=/models-finetuned/group-matting/best
 BIREFNET_IMAGE_SIZE=1024
-BIREFNET_PRESERVE_ASPECT_RATIO=true
 ```
-
-Then rebuild/restart:
-
-```bash
-docker compose up -d --build
-```
-
-## Minimum useful data target
-
-- Quick proof: 100-200 corrected train images + 30 validation images.
-- Better production pass: 500-1500 corrected train images + 100 validation images.
-- Strong domain model: several thousand reviewed images, especially hard group
-  photos and mixed people/object scenes.

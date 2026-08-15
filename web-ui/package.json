@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "dayjs": "^1.11.19",
     "framer-motion": "^11.11.12",
     "react-dropzone": "^14.2.3",
     "@base-ui/react": "^1.7.0",
