@@ -48,7 +48,7 @@ Set `BIREFNET_TRITON_ENABLED=false` to disable Triton and use the local worker o
 
 ## Run fast API server without Docker
 
-- Windows
+- On Windows
 
 ```bash
 cd server
@@ -58,7 +58,7 @@ pip install -r requirements.txt
 uvicorn server:server --host 0.0.0.0 --port 8010
 ```
 
-- Linux
+- On Linux
 
 ```bash
 cd server

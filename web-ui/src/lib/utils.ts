@@ -57,4 +57,14 @@ const downloadFile = async (id: string, imageData: string) => {
   }
 }
 
-export { cn, toBase64, alpha, downloadFile }
+const getVisiblePages = (currentPage: number, totalPages: number) => {
+  const pages = new Set([1, totalPages])
+
+  for (let page = currentPage - 1; page <= currentPage + 1; page += 1) {
+    if (page > 1 && page < totalPages) pages.add(page)
+  }
+
+  return Array.from(pages).sort((a, b) => a - b)
+}
+
+export { cn, toBase64, alpha, downloadFile, getVisiblePages }
