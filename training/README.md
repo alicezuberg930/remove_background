@@ -8,17 +8,17 @@ multiple people standing close together or mixed people + objects.
 Put manually checked images and masks here:
 
 ```text
-training/data/group-matting/
-  train/
-    images/
-      sample-001.jpg
-    masks/
-      sample-001.png
-  val/
-    images/
-      sample-101.jpg
-    masks/
-      sample-101.png
+```text
+training
+└── data/
+    └── group-matting/
+        ├── train/
+        │   ├── images/*.jpg
+        │   └── masks/*.png
+        │
+        └── val/
+            ├── images/*.jpg
+            └── masks/*.png
 ```
 
 Mask file names must match image file names by stem. Example:

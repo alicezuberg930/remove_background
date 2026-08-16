@@ -137,7 +137,6 @@ export const HomePage = () => {
                 onClick={removeBackground}
                 disabled={loading || !selectedFile}
               >
-
                 {loading ? <Spinner /> : 'Remove Background'}
               </Button>
             </div>

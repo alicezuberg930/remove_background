@@ -83,11 +83,16 @@ The repository runs inference/deployment from this service. Training is isolated
 Dataset structure:
 
 ```text
-training/data/group-matting/
-  train/images/*.jpg
-  train/masks/*.png
-  val/images/*.jpg
-  val/masks/*.png
+training
+└── data/
+    └── group-matting/
+        ├── train/
+        │   ├── images/*.jpg
+        │   └── masks/*.png
+        │
+        └── val/
+            ├── images/*.jpg
+            └── masks/*.png
 ```
 
 Image and mask names must match, for example `group-001.jpg` and `group-001.png`.
