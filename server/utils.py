@@ -4,9 +4,14 @@ import secrets
 import threading
 import time
 from typing import Any, Dict, TypedDict
+from PIL import Image
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
+
+from env import load_server_env
+
+load_server_env()
 
 logger = logging.getLogger('remove_background_service')
 logging.basicConfig(level=os.getenv('LOG_LEVEL', 'INFO'))
@@ -112,6 +117,9 @@ async def interceptor(request: Request, call_next):
         logger.exception('[REMOVE-BG] Unhandled error in /remove-background')
         response = JSONResponse(status_code=500, content={'detail': 'Internal server error'})
 
+    if response.headers.get('content-type', '').lower().startswith('image/'):
+        return response
+
     envelope = build_envelope(request, response)
     wrapped_headers = {
         name: value
@@ -123,3 +131,93 @@ async def interceptor(request: Request, call_next):
         content=envelope,
         headers=wrapped_headers,
     )
+
+
+CLEANED_RESULTS_DIR = 'cleaned-results'
+CLEANED_IMAGE_FILENAME = 'cleaned.png'
+CORS_ALLOWED_ORIGINS = (
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+)
+IMAGE_MEDIA_TYPES = {
+    '.avif': 'image/avif',
+    '.bmp': 'image/bmp',
+    '.gif': 'image/gif',
+    '.jpeg': 'image/jpeg',
+    '.jpg': 'image/jpeg',
+    '.png': 'image/png',
+    '.tif': 'image/tiff',
+    '.tiff': 'image/tiff',
+    '.webp': 'image/webp',
+}
+
+
+def is_valid_job_id(job_id: str) -> bool:
+    return bool(job_id) and job_id.isalnum()
+
+
+def job_directory(job_id: str) -> str:
+    return os.path.join(CLEANED_RESULTS_DIR, job_id)
+
+
+def image_bit_depth(mode: str) -> int:
+    if mode == '1':
+        return 1
+    if mode.startswith('I;16'):
+        return 16
+    if mode in {'I', 'F'}:
+        return 32
+    return Image.getmodebands(mode) * 8
+
+
+def normalize_extension(filename: str | None, detected_format: str | None) -> str:
+    base_name = (filename or '').strip()
+    _, ext = os.path.splitext(base_name)
+    ext = ext[1:].strip().lower()
+    if ext and ext.replace('_', '').replace('-', '').isalnum():
+        return ext
+    if detected_format and detected_format.isalpha():
+        return detected_format.lower()
+    return 'png'
+
+
+def is_original_image_filename(filename: str) -> bool:
+    name, ext = os.path.splitext(filename)
+    return name == 'original' and bool(ext) and ext[1:].isalnum()
+
+
+def image_media_type(filename: str) -> str:
+    return IMAGE_MEDIA_TYPES.get(os.path.splitext(filename)[1].lower(), 'application/octet-stream')
+
+
+def image_response_headers(request: Request) -> dict[str, str]:
+    headers = {'Cache-Control': 'public, max-age=31536000, immutable'}
+    origin = request.headers.get('origin')
+    if origin in CORS_ALLOWED_ORIGINS:
+        headers['Access-Control-Allow-Origin'] = origin
+        headers['Access-Control-Allow-Credentials'] = 'true'
+        headers['Vary'] = 'Origin'
+    return headers
+
+
+def extract_original_filename(record: dict) -> str:
+    original_image = str(record.get('original_image', '')).strip()
+    filename = os.path.basename(original_image)
+    if is_original_image_filename(filename):
+        return filename
+    original_extension = str(record.get('original_extension', 'png')).lower()
+    return f'original.{original_extension or "png"}'
+
+
+def record_with_image_urls(request: Request, record: dict) -> dict:
+    response_record = dict(record)
+    job_id = str(record.get('job_id', ''))
+    if is_valid_job_id(job_id):
+        original_filename = extract_original_filename(record)
+        response_record['original_image'] = str(
+            request.url_for('cleaned_background_image', job_id=job_id, filename=original_filename)
+        )
+        response_record['cleaned_image'] = str(
+            request.url_for('cleaned_background_image', job_id=job_id, filename=CLEANED_IMAGE_FILENAME)
+        )
+    return response_record

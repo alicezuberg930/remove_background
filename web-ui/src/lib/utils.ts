@@ -6,13 +6,6 @@ const cn = (...inputs: ClassValue[]) => {
   return twMerge(clsx(inputs))
 }
 
-const toBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
-  const reader = new FileReader()
-  reader.onload = () => resolve(reader.result as string)
-  reader.onerror = () => reject(new Error('Could not read image file.'))
-  reader.readAsDataURL(file)
-})
-
 const alpha = (color: string, opacity: number): string => {
   // Handle hex colors
   if (color.startsWith('#')) {
@@ -32,16 +25,16 @@ const alpha = (color: string, opacity: number): string => {
   return `rgba(0, 0, 0, ${opacity})`
 }
 
-const downloadFile = async (id: string, imageData: string) => {
+const downloadFile = async (id: string, image: string) => {
   try {
-    const response = await fetch(imageData)
+    const response = await fetch(image)
     if (!response.ok) {
       throw new Error('Failed to prepare image for download.')
     }
     const blob = await response.blob()
-    const extension = (imageData.match(/data:image\/([a-zA-Z0-9.+-]+);base64,/)?.[1] || 'png').split('+')[0]
-    const mimeToExtension = extension === 'jpeg' ? 'jpg' : extension
-    const fileName = `cleaned-background-${id}.${mimeToExtension}`
+    const contentType = response.headers.get('content-type')?.split(';', 1)[0]
+    const extension = contentType === 'image/webp' ? 'webp' : 'png'
+    const fileName = `cleaned-background-${id}.${extension}`
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
@@ -67,4 +60,4 @@ const getVisiblePages = (currentPage: number, totalPages: number) => {
   return Array.from(pages).sort((a, b) => a - b)
 }
 
-export { cn, toBase64, alpha, downloadFile, getVisiblePages }
+export { cn, alpha, downloadFile, getVisiblePages }

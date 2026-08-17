@@ -75,6 +75,5 @@ Best checkpoint is stored at `training/runs/group-matting/best`.
 To deploy this checkpoint in Docker Compose or local machine, set:
 
 ```dotenv
-BIREFNET_MODEL_ID=/models-finetuned/group-matting/best
-BIREFNET_IMAGE_SIZE=1024
+BIREFNET_MODEL_ID=/training/runs/group-matting/best
 ```

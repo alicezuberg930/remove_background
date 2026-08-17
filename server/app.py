@@ -1,31 +1,26 @@
-import base64
 import io
 import logging
 import multiprocessing as mp
 import os
 import threading
 import time
-from urllib.parse import urlsplit
 import numpy as np
-from pydantic import BaseModel
 from PIL import Image, ImageFilter
+from env import load_server_env
 
+load_server_env()
 
 logger = logging.getLogger('remove_background_service')
 logging.basicConfig(level=os.getenv('LOG_LEVEL', 'INFO'))
 
 _birefnet_runtime_cache: dict[tuple[str, str, int, bool, bool, tuple[int, int, int]], dict] = {}
-_BIREFNET_TIMEOUT_SECONDS = int(os.getenv('BIREFNET_TIMEOUT_SECONDS', '120'))
-_BIREFNET_ACQUIRE_TIMEOUT_SECONDS = int(os.getenv('BIREFNET_ACQUIRE_TIMEOUT_SECONDS', '10'))
+_BIREFNET_TIMEOUT_SECONDS = int(os.getenv('BIREFNET_TIMEOUT_SECONDS'))
+_BIREFNET_ACQUIRE_TIMEOUT_SECONDS = int(os.getenv('BIREFNET_ACQUIRE_TIMEOUT_SECONDS'))
 _BIREFNET_POLL_INTERVAL_SECONDS = 0.5
-_BIREFNET_WORKER_POOL_SIZE = int(os.getenv('BIREFNET_WORKER_POOL_SIZE', '1'))
+_BIREFNET_WORKER_POOL_SIZE = int(os.getenv('BIREFNET_WORKER_POOL_SIZE'))
 _birefnet_worker_pool_condition = threading.Condition()
 _birefnet_worker_pool: list[dict[str, object]] = []
 _birefnet_worker_next_index = 0
-
-
-class RemoveBackgroundRequest(BaseModel):
-    image_base64: str
 
 
 class BiRefNetWorkerAcquireTimeout(Exception):
@@ -33,7 +28,7 @@ class BiRefNetWorkerAcquireTimeout(Exception):
 
 
 def _env_bool(name: str, default: bool) -> bool:
-    raw_value = (os.getenv(name, '') or '').strip().lower()
+    raw_value = os.getenv(name)
     if not raw_value:
         return default
     return raw_value in ('1', 'true', 'yes', 'on')
@@ -53,7 +48,7 @@ def _env_int(name: str, default: int, min_value: int | None = None, max_value: i
 
 
 def _parse_rgb_env(name: str, default: tuple[int, int, int]) -> tuple[int, int, int]:
-    raw_value = (os.getenv(name, '') or '').strip()
+    raw_value = os.getenv(name).strip()
     if not raw_value:
         return default
 
@@ -97,12 +92,6 @@ def _clean_alpha_image(img: Image.Image) -> Image.Image:
     cleaned.putalpha(Image.fromarray(final_alpha))
 
     return cleaned
-
-
-def _decode_base64_image(raw: str) -> bytes:
-    if ',' in raw and raw.startswith('data:'):
-        raw = raw.split(',', 1)[1]
-    return base64.b64decode(raw)
 
 
 def _pil_to_bytes(img: Image.Image, fmt: str = 'PNG') -> bytes:
@@ -190,90 +179,6 @@ def _mask_to_foreground_png(
     output = io.BytesIO()
     fg_img.save(output, format='PNG')
     return output.getvalue()
-
-
-def _normalize_triton_http_url(triton_url: str) -> str:
-    normalized_url = (triton_url or '').strip().rstrip('/')
-    if not normalized_url:
-        return normalized_url
-
-    if '://' not in normalized_url:
-        return normalized_url
-
-    parsed = urlsplit(normalized_url)
-    if parsed.scheme not in ('http', 'https'):
-        raise ValueError(f'Unsupported Triton URL scheme: {parsed.scheme}')
-    if not parsed.netloc:
-        raise ValueError('Triton URL must include a host')
-    if parsed.path not in ('', '/') or parsed.query or parsed.fragment:
-        raise ValueError('Triton URL must point to the Triton server root')
-    return parsed.netloc
-
-
-def _run_birefnet_via_triton(
-    image_bytes: bytes,
-    model_name: str,
-    triton_url: str,
-    image_size: int,
-    timeout_seconds: int,
-    preserve_aspect_ratio: bool,
-    pad_color: tuple[int, int, int],
-) -> tuple[bytes | None, str | None]:
-    from torchvision import transforms
-
-    try:
-        import tritonclient.http as triton_http
-    except ImportError as exc:
-        logger.warning('[REMOVE-BG] Triton client dependency missing: %s', exc)
-        return None, None
-
-    try:
-        subject_img = Image.open(io.BytesIO(image_bytes)).convert('RGBA')
-        image_rgb = subject_img.convert('RGB')
-        prepared_img, mask_box = _prepare_birefnet_image(
-            image_rgb=image_rgb,
-            image_size=image_size,
-            preserve_aspect_ratio=preserve_aspect_ratio,
-            pad_color=pad_color,
-        )
-        client_url = _normalize_triton_http_url(triton_url)
-        if preserve_aspect_ratio:
-            transform_image = transforms.Compose([
-                transforms.ToTensor(),
-                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-            ])
-        else:
-            transform_image = transforms.Compose([
-                transforms.Resize((image_size, image_size)),
-                transforms.ToTensor(),
-                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-            ])
-        input_tensor = transform_image(prepared_img).unsqueeze(0).numpy().astype(np.float32)
-
-        client = triton_http.InferenceServerClient(
-            url=client_url,
-            connection_timeout=timeout_seconds,
-            network_timeout=timeout_seconds,
-        )
-        infer_input = triton_http.InferInput('input', input_tensor.shape, 'FP32')
-        infer_input.set_data_from_numpy(input_tensor, binary_data=True)
-        infer_output = triton_http.InferRequestedOutput('mask', binary_data=True)
-        result = client.infer(model_name=model_name, inputs=[infer_input], outputs=[infer_output])
-        pred_mask = result.as_numpy('mask')
-        if pred_mask is None:
-            logger.warning('[REMOVE-BG] Triton returned no mask output')
-            return None, None
-
-        if pred_mask.ndim == 4:
-            pred_mask = pred_mask[0, 0]
-        elif pred_mask.ndim == 3:
-            pred_mask = pred_mask[0]
-
-        output_bytes = _mask_to_foreground_png(subject_img, pred_mask, mask_box=mask_box)
-        return output_bytes, f'Triton:{model_name}'
-    except Exception as exc:
-        logger.warning('[REMOVE-BG] Triton inference failed: %s', exc)
-        return None, None
 
 
 def _run_birefnet_inference(
@@ -500,37 +405,18 @@ def _release_birefnet_worker(index: int, runtime: dict[str, object], reset: bool
         _birefnet_worker_pool_condition.notify()
 
 
-def remove_bg_birefnet(subject_img: Image.Image):
-    model_id = (os.getenv('BIREFNET_MODEL_ID', 'ZhengPeng7/BiRefNet') or '').strip()
+def remove_bg_birefnet(model_id: str, subject_img: Image.Image):
     if not model_id:
         return None, None
 
-    configured_device = (os.getenv('BIREFNET_DEVICE', '') or '').strip().lower()
-    image_size = int(os.getenv('BIREFNET_IMAGE_SIZE', '1024') or '1024')
+    configured_device = os.getenv('BIREFNET_DEVICE')
+    image_size = int(os.getenv('BIREFNET_IMAGE_SIZE'))
     timeout_seconds = max(1, _BIREFNET_TIMEOUT_SECONDS)
     acquire_timeout_seconds = max(1, _BIREFNET_ACQUIRE_TIMEOUT_SECONDS)
-    use_half = (os.getenv('BIREFNET_USE_HALF', 'true').strip().lower() in ('1', 'true', 'yes', 'on'))
+    use_half = os.getenv('BIREFNET_USE_HALF') in ('1', 'true', 'yes', 'on')
     preserve_aspect_ratio = _env_bool('BIREFNET_PRESERVE_ASPECT_RATIO', True)
     pad_color = _parse_rgb_env('BIREFNET_PAD_COLOR', (123, 116, 103))
     image_bytes = _pil_to_bytes(subject_img, fmt='PNG')
-
-    triton_enabled = (os.getenv('BIREFNET_TRITON_ENABLED', 'true').strip().lower() in ('1', 'true', 'yes', 'on'))
-    triton_url = (os.getenv('BIREFNET_TRITON_URL', '') or '').strip().rstrip('/')
-    triton_model_name = (os.getenv('BIREFNET_TRITON_MODEL_NAME', 'birefnet') or 'birefnet').strip()
-    if triton_enabled and triton_url:
-        output_bytes, engine_name = _run_birefnet_via_triton(
-            image_bytes=image_bytes,
-            model_name=triton_model_name,
-            triton_url=triton_url,
-            image_size=image_size,
-            timeout_seconds=timeout_seconds,
-            preserve_aspect_ratio=preserve_aspect_ratio,
-            pad_color=pad_color,
-        )
-        if output_bytes is not None:
-            fg_img = Image.open(io.BytesIO(output_bytes)).convert('RGBA')
-            logger.info('[REMOVE-BG] BiRefNet Triton success (%s via %s)', triton_model_name, triton_url)
-            return fg_img, engine_name
 
     try:
         import torch

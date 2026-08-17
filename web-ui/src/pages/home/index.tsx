@@ -2,8 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { httpClient } from '@/lib/repository/http-client'
-import { CleanedBackground, Response } from '@/@types'
-import { toBase64 } from '@/lib/utils'
+import { CleanedBackground, models, Response } from '@/@types'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Spinner } from '@/components/ui/spinner'
 import { toast } from 'sonner'
@@ -11,9 +10,14 @@ import { Upload, CustomFile } from '@/components/upload'
 import { DetailsDialog } from './components/details-dialog'
 import { ImageCard } from './components/image-card'
 import { ItemPagination } from './components/item-pagination'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+
+const modelOptions = Array.from(models.entries())
+const defaultModelId = modelOptions[0]?.[0] ?? ''
 
 export const HomePage = () => {
   const [selectedFile, setSelectedFile] = useState<CustomFile | null>(null)
+  const [selectedModelId, setSelectedModelId] = useState<string>(defaultModelId)
   const [loading, setLoading] = useState<boolean>(false)
   const [results, setResults] = useState<Response<CleanedBackground[]> | null>(null)
   const [resultsLoading, setResultsLoading] = useState<boolean>(false)
@@ -85,8 +89,10 @@ export const HomePage = () => {
     }
     setLoading(true)
     try {
-      const image_base64 = await toBase64(selectedFile)
-      const res = await httpClient.post<Response<CleanedBackground>>('/remove-background', { image_base64 })
+      const formData = new FormData()
+      formData.append('image', selectedFile, selectedFile.name)
+      formData.append('model_id', selectedModelId)
+      const res = await httpClient.post<Response<CleanedBackground>>('/remove-background', formData)
 
       const cleanedImage = res?.data?.cleaned_image
       if (!cleanedImage) {
@@ -103,7 +109,7 @@ export const HomePage = () => {
     } finally {
       setLoading(false)
     }
-  }, [fetchResults, page, selectedFile])
+  }, [fetchResults, page, selectedFile, selectedModelId])
 
   useEffect(() => {
     fetchResults().catch(() => { })
@@ -120,6 +126,27 @@ export const HomePage = () => {
         </CardHeader>
         <CardContent className='min-h-0 flex-1 h-full'>
           <ScrollArea className='h-full w-full **:data-[slot=scroll-area-scrollbar]:hidden'>
+            <article className='space-y-2'>
+              <h3 className='text-sm text-slate-800'>Model</h3>
+              <Select
+                value={selectedModelId}
+                onValueChange={(value) => {
+                  if (value !== null) setSelectedModelId(value)
+                }}
+                disabled={loading}
+              >
+                <SelectTrigger className='w-full'>
+                  <SelectValue placeholder='Select model' />
+                </SelectTrigger>
+                <SelectContent align='start' className='max-h-72'>
+                  {modelOptions.map(([modelId, label]) => (
+                    <SelectItem key={modelId} value={modelId}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </article>
             <article className='space-y-2'>
               <h3 className='text-sm text-slate-800'>Input image</h3>
               <Upload
