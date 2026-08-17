@@ -29,6 +29,8 @@ async def remove_background(request: Request, image: UploadFile = File(...), mod
         )
         raise HTTPException(status_code=400, detail='model_id is required.')
 
+    os.makedirs(CLEANED_RESULTS_DIR, exist_ok=True)
+
     try:
         image_data = await image.read()
         if not image_data:
@@ -204,11 +206,53 @@ def cleaned_backgrounds(
         },
     )
 
+@router.get('/cleaned-backgrounds/{job_id}')
+def cleaned_background(request: Request, job_id: str):
+    if not is_valid_job_id(job_id):
+        set_response(
+            request,
+            message='Invalid job_id path parameter.',
+            status_code=400,
+        )
+        raise HTTPException(status_code=400, detail='Invalid job_id path parameter.')
 
-@router.get(
-    '/cleaned_background_image/{job_id}/{filename}',
-    name='cleaned_background_image',
-)
+    job_dir = job_directory(job_id)
+    job_path = os.path.join(job_dir, f'{job_id}.json')
+    if os.path.islink(job_dir) or os.path.islink(job_path) or not os.path.isfile(job_path):
+        set_response(
+            request,
+            message=f'Cleaned background not found for id: {job_id}',
+            status_code=404,
+        )
+        raise HTTPException(status_code=404, detail=f'Cleaned background not found for id: {job_id}')
+
+    try:
+        with open(job_path, 'r', encoding='utf-8') as handle:
+            payload = json.load(handle)
+    except (json.JSONDecodeError, OSError) as exc:
+        set_response(
+            request,
+            message=f'Failed to read cleaned background: {exc}',
+            status_code=500,
+        )
+        raise HTTPException(status_code=500, detail=f'Failed to read cleaned background: {exc}') from exc
+
+    if not isinstance(payload, dict) or payload.get('job_id') != job_id:
+        set_response(
+            request,
+            message=f'Cleaned background not found for id: {job_id}',
+            status_code=404,
+        )
+        raise HTTPException(status_code=404, detail=f'Cleaned background not found for id: {job_id}')
+
+    set_response(
+        request,
+        message='Result fetched successfully.',
+        status_code=200,
+        data=record_with_image_urls(request, payload),
+    )
+
+@router.get('/cleaned_background_image/{job_id}/{filename}')
 def cleaned_background_image(request: Request, job_id: str, filename: str):
     is_original_image = is_original_image_filename(filename)
     if not is_valid_job_id(job_id) or (filename != CLEANED_IMAGE_FILENAME and not is_original_image):

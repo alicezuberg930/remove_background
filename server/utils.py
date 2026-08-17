@@ -201,7 +201,7 @@ def image_response_headers(request: Request) -> dict[str, str]:
 
 
 def extract_original_filename(record: dict) -> str:
-    original_image = str(record.get('original_image', '')).strip()
+    original_image = str(record.get('original_image')).strip()
     filename = os.path.basename(original_image)
     if is_original_image_filename(filename):
         return filename
@@ -211,7 +211,7 @@ def extract_original_filename(record: dict) -> str:
 
 def record_with_image_urls(request: Request, record: dict) -> dict:
     response_record = dict(record)
-    job_id = str(record.get('job_id', ''))
+    job_id = str(record.get('job_id'))
     if is_valid_job_id(job_id):
         original_filename = extract_original_filename(record)
         response_record['original_image'] = str(

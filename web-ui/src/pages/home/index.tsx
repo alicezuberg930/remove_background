@@ -12,12 +12,9 @@ import { ImageCard } from './components/image-card'
 import { ItemPagination } from './components/item-pagination'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
-const modelOptions = Array.from(models.entries())
-const defaultModelId = modelOptions[0]?.[0] ?? ''
-
 export const HomePage = () => {
   const [selectedFile, setSelectedFile] = useState<CustomFile | null>(null)
-  const [selectedModelId, setSelectedModelId] = useState<string>(defaultModelId)
+  const [selectedModelId, setSelectedModelId] = useState<string | null>(null)
   const [loading, setLoading] = useState<boolean>(false)
   const [results, setResults] = useState<Response<CleanedBackground[]> | null>(null)
   const [resultsLoading, setResultsLoading] = useState<boolean>(false)
@@ -91,7 +88,7 @@ export const HomePage = () => {
     try {
       const formData = new FormData()
       formData.append('image', selectedFile, selectedFile.name)
-      formData.append('model_id', selectedModelId)
+      if (selectedModelId) formData.append('model_id', selectedModelId)
       const res = await httpClient.post<Response<CleanedBackground>>('/remove-background', formData)
 
       const cleanedImage = res?.data?.cleaned_image
@@ -116,7 +113,7 @@ export const HomePage = () => {
   }, [fetchResults])
 
   return (
-    <div className='grid h-full w-full max-w-full gap-4 grid-cols-1 md:grid-cols-[minmax(0,2.7fr)_minmax(0,2.3fr)] items-stretch'>
+    <div className='grid h-full w-full max-w-full gap-4 grid-cols-1 md:grid-cols-[minmax(0,2.7fr)_minmax(0,2.3fr)] items-stretch p-3'>
       <Card className='min-w-0 min-h-0 p-4 shadow-lg shadow-primary/20'>
         <CardHeader className='shrink-0'>
           <CardTitle className='text-2xl tracking-tight'>Remove Background</CardTitle>
@@ -127,7 +124,7 @@ export const HomePage = () => {
         <CardContent className='min-h-0 flex-1 h-full'>
           <ScrollArea className='h-full w-full **:data-[slot=scroll-area-scrollbar]:hidden'>
             <article className='space-y-2'>
-              <h3 className='text-sm text-slate-800'>Model</h3>
+              <h3 className='text-sm'>Model</h3>
               <Select
                 value={selectedModelId}
                 onValueChange={(value) => {
@@ -139,7 +136,7 @@ export const HomePage = () => {
                   <SelectValue placeholder='Select model' />
                 </SelectTrigger>
                 <SelectContent align='start' className='max-h-72'>
-                  {modelOptions.map(([modelId, label]) => (
+                  {Array.from(models.entries()).map(([modelId, label]) => (
                     <SelectItem key={modelId} value={modelId}>
                       {label}
                     </SelectItem>
@@ -148,7 +145,7 @@ export const HomePage = () => {
               </Select>
             </article>
             <article className='space-y-2'>
-              <h3 className='text-sm text-slate-800'>Input image</h3>
+              <h3 className='text-sm'>Input image</h3>
               <Upload
                 file={selectedFile}
                 onDrop={onDrop}
@@ -184,10 +181,12 @@ export const HomePage = () => {
             </div>
           )}
           <ScrollArea className='h-full w-full **:data-[slot=scroll-area-scrollbar]:hidden'>
+            {results?.data?.length === 0 && !resultsLoading && (
+              <div className='h-full text-center content-center'>
+                <h3 className='text-lg font-semibold'>No results saved yet.</h3>
+              </div>
+            )}
             <div className='grid grid-cols-2 gap-3'>
-              {results?.data?.length === 0 && !resultsLoading && (
-                <p className='text-sm text-slate-600'>No results saved yet.</p>
-              )}
               {results?.data?.map((item) => (
                 <ImageCard
                   item={item}

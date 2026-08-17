@@ -1,4 +1,4 @@
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { CleanedBackground } from '@/@types'
@@ -6,6 +6,8 @@ import { LazyLoadImage } from '@/components/lazy-load-image'
 import { memo, useCallback } from 'react'
 import { fDateTime } from '@/lib/format-time'
 import { fData } from '@/lib/format-number'
+import { Button } from '@/components/ui/button'
+import { Link } from '@tanstack/react-router'
 
 type Props = {
     selectedResult: CleanedBackground | null
@@ -93,6 +95,11 @@ export const DetailsDialog: React.FC<Props> = memo(({ selectedResult, setSelecte
                         </TableBody>
                     </Table>
                 </div>
+                <DialogFooter>
+                    <Link to={`/result/${selectedResult?.job_id}`}>
+                        <Button size='lg'>Compare Diffirences</Button>
+                    </Link>
+                </DialogFooter>
             </DialogContent>
         </Dialog>
     )

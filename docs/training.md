@@ -8,7 +8,6 @@ multiple people standing close together or mixed people + objects.
 Put manually checked images and masks here:
 
 ```text
-```text
 training
 └── data/
     └── group-matting/
