@@ -20,7 +20,12 @@ def health():
 
 
 @router.post('/remove-background')
-async def remove_background(request: Request, image: UploadFile = File(...), model_id: str = Form(...)):
+async def remove_background(
+    request: Request,
+    image: UploadFile = File(...),
+    model_id: str = Form(...),
+    image_size: int = Form(..., ge=256, le=2048),
+):
     if not model_id:
         set_response(
             request,
@@ -66,7 +71,7 @@ async def remove_background(request: Request, image: UploadFile = File(...), mod
         with open(original_path, 'wb') as handle:
             handle.write(original_bytes)
 
-        fg_img, engine_used = remove_bg_birefnet(model_id, subject_img)
+        fg_img, engine_used = remove_bg_birefnet(model_id, image_size, subject_img)
         if fg_img is None:
             set_response(
                 request,

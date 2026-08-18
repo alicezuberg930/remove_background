@@ -23,7 +23,6 @@ The service will be exposed on host port `8010`. If the backend runs on another 
 ```dotenv
 BIREFNET_DEVICE=
 BIREFNET_USE_HALF=false
-BIREFNET_IMAGE_SIZE=2048
 BIREFNET_PRESERVE_ASPECT_RATIO=true
 BIREFNET_PAD_COLOR=123,116,103
 BIREFNET_TIMEOUT_SECONDS=120

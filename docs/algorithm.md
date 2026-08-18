@@ -78,11 +78,12 @@ The repository does not implement BiRefNet layers directly. It loads the selecte
 
 ## Operational Controls
 
+The square inference canvas size is supplied per request through the required multipart `image_size` field and must be between `256` and `2048`.
+
 | Variable | Default | Effect |
 | --- | --- | --- |
 | `BIREFNET_DEVICE` | Auto | Explicit device; otherwise CUDA when available, then CPU. |
 | `BIREFNET_USE_HALF` | `true` | Enables FP16 model inference on CUDA. |
-| `BIREFNET_IMAGE_SIZE` | `1024` | Square inference canvas size used by FastAPI preprocessing. |
 | `BIREFNET_PRESERVE_ASPECT_RATIO` | `true` | Uses letterboxing instead of geometric distortion. |
 | `BIREFNET_PAD_COLOR` | `123,116,103` | RGB value for letterbox padding. |
 | `BIREFNET_TIMEOUT_SECONDS` | `120` | Maximum inference duration. |

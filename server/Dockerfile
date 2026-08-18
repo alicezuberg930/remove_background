@@ -15,6 +15,6 @@ COPY server ./server
 
 EXPOSE 8010
 
-RUN cd server
+WORKDIR /app/server
 
 CMD ["uvicorn", "server:server", "--host", "0.0.0.0", "--port", "8010"]

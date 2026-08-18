@@ -329,6 +329,64 @@ def get_pair_ids(pairs: list[tuple[Path, Path]]) -> list[tuple[str, str]]:
     return [(image.name, mask.name) for image, mask in pairs]
 
 
+def reconcile_resume_train_pairs(state: dict, train_pairs: list[tuple[Path, Path]]) -> int:
+    checkpoint_pair_ids = state.get('train_pair_ids')
+    current_pair_ids = get_pair_ids(train_pairs)
+    if checkpoint_pair_ids == current_pair_ids:
+        return 0
+
+    if (
+        not isinstance(checkpoint_pair_ids, list)
+        or len(current_pair_ids) <= len(checkpoint_pair_ids)
+    ):
+        raise SystemExit(
+            'The training image/mask list has removals or replacements; only additions are allowed when resuming.'
+        )
+
+    checkpoint_pair_set = set(checkpoint_pair_ids)
+    current_pair_positions = {
+        pair_id: index
+        for index, pair_id in enumerate(current_pair_ids)
+    }
+    if (
+        len(checkpoint_pair_set) != len(checkpoint_pair_ids)
+        or len(current_pair_positions) != len(current_pair_ids)
+    ):
+        raise SystemExit('Training image/mask pairs must be unique when resuming.')
+
+    try:
+        remapped_checkpoint_indices = [
+            current_pair_positions[pair_id]
+            for pair_id in checkpoint_pair_ids
+        ]
+    except KeyError as exc:
+        raise SystemExit(
+            'The training image/mask list has removals or replacements; only additions are allowed when resuming.'
+        ) from exc
+
+    if remapped_checkpoint_indices != sorted(remapped_checkpoint_indices):
+        raise SystemExit(
+            'Existing training image/mask pairs were reordered; only additions are allowed when resuming.'
+        )
+
+    added_indices = [
+        index
+        for index, pair_id in enumerate(current_pair_ids)
+        if pair_id not in checkpoint_pair_set
+    ]
+    epoch_order = state.get('epoch_order')
+    if epoch_order is not None:
+        if sorted(epoch_order) != list(range(len(checkpoint_pair_ids))):
+            raise SystemExit('The checkpoint contains an invalid training image order.')
+        state['epoch_order'] = [
+            remapped_checkpoint_indices[index]
+            for index in epoch_order
+        ] + added_indices
+
+    state['train_pair_ids'] = current_pair_ids
+    return len(added_indices)
+
+
 def get_next_images(
     pairs: list[tuple[Path, Path]],
     epoch_order: list[int] | None,
@@ -423,8 +481,18 @@ def load_training_checkpoint(
             'Resume arguments do not match the checkpoint: '
             + json.dumps(mismatches, default=str)
         )
-    if state.get('train_pair_ids') != get_pair_ids(train_pairs):
-        raise SystemExit('The training image/mask list has changed since the checkpoint was saved.')
+    added_pair_count = reconcile_resume_train_pairs(state, train_pairs)
+    if added_pair_count:
+        print(
+            json.dumps({
+                'resume_dataset_growth': {
+                    'checkpoint_pairs': len(train_pairs) - added_pair_count,
+                    'current_pairs': len(train_pairs),
+                    'added_pairs': added_pair_count,
+                },
+            }),
+            flush=True,
+        )
 
     epoch_order = state.get('epoch_order')
     if epoch_order is not None and sorted(epoch_order) != list(range(len(train_pairs))):
@@ -538,6 +606,7 @@ def parse_args() -> argparse.Namespace:
         action='store_true',
         help=(
             'Resume from OUTPUT_DIR/training_state.pt, including the next training image. '
+            'New training pairs may be added, but existing pairs cannot be removed, replaced, or reordered. '
             'Start fresh when no checkpoint exists.'
         ),
     )

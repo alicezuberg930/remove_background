@@ -19,9 +19,9 @@ python training/finetune_birefnet.py ^
   --val-masks training/data/group-matting/val/masks ^
   --base-model ZhengPeng7/BiRefNet_HR-matting ^
   --output-dir training/runs/group-matting ^
-  --image-size 512 ^
+  --image-size 2048 ^
   --epochs 20 ^
-  --batch-size 2 ^
+  --batch-size 1 ^
   --grad-accum-steps 8 ^
   --lr 1e-5 ^
   --trainable-patterns decoder ^

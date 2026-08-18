@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { httpClient } from '@/lib/repository/http-client'
-import { CleanedBackground, models, Response } from '@/@types'
+import { CleanedBackground, imageSizes, models, Response } from '@/@types'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Spinner } from '@/components/ui/spinner'
 import { toast } from 'sonner'
@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 export const HomePage = () => {
   const [selectedFile, setSelectedFile] = useState<CustomFile | null>(null)
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null)
+  const [imageSize, setImageSize] = useState<string>(imageSizes[0])
   const [loading, setLoading] = useState<boolean>(false)
   const [results, setResults] = useState<Response<CleanedBackground[]> | null>(null)
   const [resultsLoading, setResultsLoading] = useState<boolean>(false)
@@ -88,6 +89,7 @@ export const HomePage = () => {
     try {
       const formData = new FormData()
       formData.append('image', selectedFile, selectedFile.name)
+      formData.append('image_size', imageSize)
       if (selectedModelId) formData.append('model_id', selectedModelId)
       const res = await httpClient.post<Response<CleanedBackground>>('/remove-background', formData)
 
@@ -106,7 +108,7 @@ export const HomePage = () => {
     } finally {
       setLoading(false)
     }
-  }, [fetchResults, page, selectedFile, selectedModelId])
+  }, [fetchResults, imageSize, page, selectedFile, selectedModelId])
 
   useEffect(() => {
     fetchResults().catch(() => { })
@@ -123,6 +125,27 @@ export const HomePage = () => {
         </CardHeader>
         <CardContent className='min-h-0 flex-1 h-full'>
           <ScrollArea className='h-full w-full **:data-[slot=scroll-area-scrollbar]:hidden'>
+            <article className='space-y-2'>
+              <h3 className='text-sm'>Image size</h3>
+              <Select
+                value={imageSize}
+                onValueChange={(value) => {
+                  if (value !== null) setImageSize(value)
+                }}
+                disabled={loading}
+              >
+                <SelectTrigger className='w-full'>
+                  <SelectValue placeholder='Select image size' />
+                </SelectTrigger>
+                <SelectContent align='start' className='max-h-72'>
+                  {imageSizes.map(size => (
+                    <SelectItem key={size} value={size}>
+                      {size}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </article>
             <article className='space-y-2'>
               <h3 className='text-sm'>Model</h3>
               <Select

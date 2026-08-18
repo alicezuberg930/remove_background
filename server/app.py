@@ -405,12 +405,11 @@ def _release_birefnet_worker(index: int, runtime: dict[str, object], reset: bool
         _birefnet_worker_pool_condition.notify()
 
 
-def remove_bg_birefnet(model_id: str, subject_img: Image.Image):
+def remove_bg_birefnet(model_id: str, image_size: int, subject_img: Image.Image):
     if not model_id:
         return None, None
 
     configured_device = os.getenv('BIREFNET_DEVICE')
-    image_size = int(os.getenv('BIREFNET_IMAGE_SIZE'))
     timeout_seconds = max(1, _BIREFNET_TIMEOUT_SECONDS)
     acquire_timeout_seconds = max(1, _BIREFNET_ACQUIRE_TIMEOUT_SECONDS)
     use_half = os.getenv('BIREFNET_USE_HALF') in ('1', 'true', 'yes', 'on')
