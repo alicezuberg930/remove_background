@@ -1,12 +1,12 @@
 services:
   remove-background-service:
     build:
-      context: ..
+      context: .
       dockerfile: server/Dockerfile
     env_file:
-      - .env
+      - server/.env
     volumes:
-      - ../training/runs:/training/runs:ro
+      - training/runs:/training/runs:ro
     ports:
       - "8010:8010"
     restart: unless-stopped

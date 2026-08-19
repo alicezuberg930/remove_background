@@ -13,6 +13,12 @@ export type CleanedBackground = {
     original_extension?: string
 }
 
+export type BackgroundFilter = {
+    page?: number
+    page_size?: number
+    sort?: string
+}
+
 export const models = new Map<string, string>([
     ["ZhengPeng7/BiRefNet", "BiRefNet - 0.2B"],
     ["ZhengPeng7/BiRefNet_HR", "BiRefNet_HR - 0.2B"],

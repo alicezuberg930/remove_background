@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { PageNotFoundIllustration, SeverErrorIllustration } from '@/lib/illustrations'
 import { HomePage } from '@/pages/home'
 import { ResultPage } from '@/pages/result'
+import { QueryClientProvider } from './query-client-provider'
 
 const RouterErrorPage = ({ error, reset }: ErrorComponentProps) => (
     <div className="flex h-full items-center justify-center px-4">
@@ -68,6 +69,8 @@ export const router = createRouter({
 
 export default function RouterProvider() {
     return (
-        <RP router={router} />
+        <QueryClientProvider>
+            <RP router={router} />
+        </QueryClientProvider>
     )
 }

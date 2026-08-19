@@ -1,4 +1,4 @@
-import { type Response } from '@/@types'
+import { type ApiResponse } from '@/@types'
 import { HttpError } from './http-error'
 import { InterceptorManager } from './interceptor'
 
@@ -36,7 +36,7 @@ export class HttpClient {
       const response = await fetch(url, config)
       if (!response.ok) {
         const text = await response.text()
-        let data: Response<null> | string
+        let data: ApiResponse<null> | string
         try {
           data = text ? JSON.parse(text) : null
         } catch {

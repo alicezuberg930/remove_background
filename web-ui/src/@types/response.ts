@@ -1,4 +1,4 @@
-export type Response<T = unknown> = {
+export type ApiResponse<T = unknown> = {
     message: string
     data?: T
     statusCode?: number
